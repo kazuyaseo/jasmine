@@ -1,0 +1,90 @@
+version: '3'
+services:
+    nginx:
+        image: nginx:1.15-alpine
+        ports:
+            - "3000:3000"
+        volumes:
+            - ./:/var/www/html:cached
+        depends_on:
+            - php-fpm
+        environment:
+            - APP_ENV=docker
+            - TZ=Asia/Tokyo
+            - LANG=C.UTF-8
+        command:
+            - /bin/sh
+            - -c
+            - |
+                if [ ! -f /etc/nginx/conf.d/laravel.conf ]; then
+                    cat << 'EOF' > /etc/nginx/conf.d/laravel.conf
+                    server_tokens off;
+                    server {
+                        listen 3000;
+                        root /var/www/html/public;
+                        location / {
+                            index  index.php index.html index.htm;
+                            try_files $$uri $$uri/ /index.php?$$query_string;
+                        }
+
+                        location ~ \.php$$ {
+                            fastcgi_pass   php-fpm:9000;
+                            fastcgi_index  index.php;
+                            fastcgi_param  SCRIPT_FILENAME  $$document_root$$fastcgi_script_name;
+                            include        fastcgi_params;
+                        }
+                    }
+                EOF
+                fi
+                exec nginx -g 'daemon off;'
+
+    php-fpm:
+        image: seoda/php-fpm-for-laravel:7.3
+        volumes:
+            - ./:/var/www/html:cached
+        depends_on:
+            - mysql
+            - redis
+        environment:
+            - APP_ENV=docker
+            - COMPOSER_ALLOW_SUPERUSER=1
+            - TZ=Asia/Tokyo
+            - LANG=C.UTF-8
+        command:
+            - /bin/sh
+            - -c
+            - |
+                if [ ! -d vendor ]; then
+                    composer install
+                fi
+                if php artisan migrate:status > /dev/null; then
+                    php artisan migrate
+                fi
+                exec php-fpm
+
+    mailhog:
+        image: mailhog/mailhog
+        ports:
+            - "8025:8025"
+        environment:
+            - TZ=Asia/Tokyo
+            - LANG=C.UTF-8
+
+    redis:
+        image: redis:4-alpine
+        environment:
+            - TZ=Asia/Tokyo
+            - LANG=C.UTF-8
+
+    mysql:
+        env_file: .env.docker
+        image: mysql:5.7
+        volumes:
+            - mysqldata:/var/lib/mysql
+        environment:
+            - TZ=Asia/Tokyo
+            - LANG=C.UTF-8
+        command: ["mysqld", "--default-authentication-plugin=mysql_native_password"]
+
+volumes:
+    mysqldata:
